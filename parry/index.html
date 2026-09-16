@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>바람의 검객: 일섬 패링 액션 (버그 수정판)</title>
+<title>바람의 검객: 일섬 패링 액션</title>
 <style>
   body { background: #111; color: #fff; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
   canvas { background: #181818; border: 2px solid #555; display: block; margin: 0 auto; box-shadow: 0 4px 25px rgba(0,0,0,0.8); }
@@ -19,8 +19,12 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
-// 🖼️ 이미지 리소스 로드 (폴더 밖에 index.html과 같이 있어야 함)
-const imgPlayer = new Image(); imgPlayer.src = 'player.png';
+// 🖼️ 플레이어 3단 상태 이미지 로드
+const imgPlayerIdle = new Image(); imgPlayerIdle.src = 'player_idle.png';
+const imgPlayerRun = new Image(); imgPlayerRun.src = 'player_run.png';
+const imgPlayerAttack = new Image(); imgPlayerAttack.src = 'player_attack.png';
+
+// 적 & 보스 이미지
 const imgBoss = new Image(); imgBoss.src = 'boss.png';
 const imgEnemyMelee = new Image(); imgEnemyMelee.src = 'enemy_melee.png';
 const imgEnemyRanged = new Image(); imgEnemyRanged.src = 'enemy_ranged.png';
@@ -59,7 +63,7 @@ let feedbackText = "적의 칼날을 튕겨내라능!";
 let player = { 
   x: 120, y: 200, vx: 0, speed: 4.8, hp: 3, 
   state: 'IDLE', timer: 0, facing: 1, dodgeCooldown: 0,
-  drawW: 80, drawH: 95
+  drawW: 90, drawH: 100, isMoving: false
 };
 let enemy = null;
 let projectiles = [];
@@ -131,10 +135,19 @@ function update() {
   if (player.dodgeCooldown > 0) player.dodgeCooldown--;
 
   if (gameState === 'PLAY') {
-    // 1. 플레이어 이동
+    player.isMoving = false;
+
     if (player.state === 'IDLE') {
-      if (keys['KeyA'] || keys['ArrowLeft']) { player.x -= player.speed; player.facing = -1; }
-      if (keys['KeyD'] || keys['ArrowRight']) { player.x += player.speed; player.facing = 1; }
+      if (keys['KeyA'] || keys['ArrowLeft']) { 
+        player.x -= player.speed; 
+        player.facing = -1; 
+        player.isMoving = true;
+      }
+      if (keys['KeyD'] || keys['ArrowRight']) { 
+        player.x += player.speed; 
+        player.facing = 1; 
+        player.isMoving = true;
+      }
       player.x = Math.max(40, Math.min(canvas.width - 40, player.x));
     } else if (player.state === 'PARRY') {
       player.timer--;
@@ -154,7 +167,7 @@ function update() {
       if (player.timer <= 0) player.state = 'IDLE';
     }
 
-    // 2. 투사체 처리
+    // 투사체 처리
     for (let i = projectiles.length - 1; i >= 0; i--) {
       let p = projectiles[i];
       p.x += p.vx;
@@ -206,7 +219,7 @@ function update() {
       if (p.x < -60 || p.x > canvas.width + 60) projectiles.splice(i, 1);
     }
 
-    // 3. 적 및 보스 AI
+    // 적 및 보스 AI
     if (enemy && enemy.active) {
       if (enemy.flashTimer > 0) enemy.flashTimer--;
 
@@ -235,7 +248,6 @@ function update() {
           }
         }
       } else {
-        // [👑 최종 보스 AI]
         if (enemy.state === 'DECIDE') {
           enemy.timer--;
           if (enemy.timer <= 0) {
@@ -306,6 +318,7 @@ function update() {
   } else if (gameState === 'ADVANCING') {
     player.x += 7;
     player.facing = 1;
+    player.isMoving = true;
     if (player.x > canvas.width + 40) {
       stage++;
       player.x = -30;
@@ -343,14 +356,9 @@ function handleClash(target, attackDir) {
       player.vx = -attackDir * 9;
       player.timer = 12;
 
-      // 🌟 [최종 보스전 버그 수정 포인트]
-      // 교차 슬라이딩이 터지는 찰나에, 주인공 좌표를 기준으로 시선을 강제로 보스를 향하게 뒤집는다능!
-      if (attackDir === -1) { // 보스가 우->좌로 돌진했을 때 (주인공은 보스보다 왼쪽에서 마주침)
-        // 주인공은 오른쪽(-attackDir * vx, 결과적으로 +vx)으로 미끄러져 보스의 오른쪽 좌표로 이동.
-        // 그러므로 시선은 '왼쪽'(-1)을 보게 고정!
+      if (attackDir === -1) {
         player.facing = -1;
-      } else { // 보스가 좌->우로 돌진했을 때
-        // 주인공은 왼쪽으로 미끄러져 보스의 왼쪽 좌표로 이동. 시선은 '오른쪽'(1) 고정!
+      } else {
         player.facing = 1;
       }
 
@@ -392,7 +400,7 @@ function drawCharacter(img, x, y, width, height, facingRight, alpha = 1.0, isFla
     ctx.filter = 'brightness(2.5) contrast(1.5)';
   }
 
-  if (img.complete && img.naturalWidth !== 0) {
+  if (img && img.complete && img.naturalWidth !== 0) {
     ctx.drawImage(img, -width / 2, -height / 2, width, height);
   } else {
     ctx.fillStyle = '#4caf50';
@@ -410,24 +418,32 @@ function draw() {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 바닥
+  // 바닥 선
   ctx.strokeStyle = '#444';
   ctx.lineWidth = 2;
   ctx.strokeRect(0, 248, canvas.width, 2);
 
-  // 1. 플레이어
+  // 🌟 플레이어 상태별 이미지 선택 로직!
+  let currentPlayerImg = imgPlayerIdle;
+  if (player.state === 'PARRY' || player.state === 'SLIDE_PASS') {
+    currentPlayerImg = imgPlayerAttack; // 패링 또는 교차 베기 시 공격 모션
+  } else if (player.isMoving || player.state === 'DODGE') {
+    currentPlayerImg = imgPlayerRun;    // 뛸 때 또는 회피 시 질주 모션
+  }
+
+  // 프레임 기준이 오른쪽을 보게 되어 있으므로 facing === 1 이면 오른쪽 그대로 출력
   const isPlayerFacingRight = (player.facing === 1);
   const playerAlpha = (player.state === 'DODGE') ? 0.45 : 1.0;
-  drawCharacter(imgPlayer, player.x, player.y, player.drawW, player.drawH, isPlayerFacingRight, playerAlpha);
+  drawCharacter(currentPlayerImg, player.x, player.y, player.drawW, player.drawH, isPlayerFacingRight, playerAlpha);
 
-  // 패링 실드
+  // 패링 잔상/실드
   if (player.state === 'PARRY') {
     ctx.strokeStyle = '#00e5ff';
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 4;
     ctx.strokeRect(player.x - 24, player.y - 48, 48, 96);
   }
 
-  // 2. 투사체
+  // 투사체
   projectiles.forEach(p => {
     ctx.fillStyle = p.reflected ? '#00e5ff' : '#ff1744';
     ctx.beginPath();
@@ -435,7 +451,7 @@ function draw() {
     ctx.fill();
   });
 
-  // 3. 적 & 보스
+  // 적 & 보스
   if (enemy && enemy.active) {
     if (enemy.isBoss) {
       const isBossFacingRight = !(enemy.facing === 1);
@@ -497,7 +513,6 @@ function draw() {
   ctx.fillStyle = dodgeReady ? '#00e5ff' : '#777';
   ctx.fillText(`회피(Shift): ${dodgeReady ? 'READY' : 'COOL'}`, 30, 85);
 
-  // 보스 HP 바
   if (enemy && enemy.isBoss && enemy.active) {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ff5252';
@@ -520,7 +535,6 @@ function draw() {
   ctx.fillStyle = '#eee';
   ctx.fillText(feedbackText, canvas.width / 2, 305);
 
-  // 결과 창
   if (gameState === 'VICTORY') {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
