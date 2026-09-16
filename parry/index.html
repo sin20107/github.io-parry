@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>바람의 검객: 완전체 최종판</title>
+<title>바람의 검객: 일섬 패링</title>
 <style>
   * { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
   body { 
@@ -18,7 +18,6 @@
   .info-bar { font-size: 13px; color: #aaa; margin: 6px 0; }
   .key { color: #00e5ff; font-weight: bold; }
 
-  /* 📱 모바일 가상 패드 UI */
   #touch-controls {
     display: flex; justify-content: space-between; align-items: center;
     max-width: 800px; margin: 15px auto 0; padding: 0 10px;
@@ -61,9 +60,10 @@
 </div>
 
 <script>
-// [1] 초기 설정 및 이미지 로드 (이전과 동일)
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+
+// 🖼️ 이미지 리소스
 const imgPlayerIdle = new Image(); imgPlayerIdle.src = 'player_idle.png';
 const imgPlayerRun = new Image(); imgPlayerRun.src = 'player_run.png';
 const imgPlayerAttack = new Image(); imgPlayerAttack.src = 'player_attack.png';
@@ -71,43 +71,143 @@ const imgBoss = new Image(); imgBoss.src = 'boss.png';
 const imgEnemyMelee = new Image(); imgEnemyMelee.src = 'enemy_melee.png';
 const imgEnemyRanged = new Image(); imgEnemyRanged.src = 'enemy_ranged.png';
 
-let keys = {}; let touchLeft = false; let touchRight = false;
-window.addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') triggerParry(); if (e.code === 'ShiftLeft' || e.code === 'KeyK') triggerDodge(); });
-window.addEventListener('keyup', e => keys[e.code] = false);
-function bindTouch(id, downFn, upFn) { const el = document.getElementById(id); el.addEventListener('touchstart', e => { e.preventDefault(); downFn(); }, {passive: false}); el.addEventListener('touchend', e => { e.preventDefault(); upFn(); }, {passive: false}); }
-bindTouch('btn-left', () => touchLeft = true, () => touchLeft = false); bindTouch('btn-right', () => touchRight = true, () => touchRight = false); bindTouch('btn-parry', triggerParry, () => {}); bindTouch('btn-dodge', triggerDodge, () => {});
+let keys = {};
+let touchLeft = false;
+let touchRight = false;
 
-// [2] 게임 변수 및 오브젝트 (이전과 동일)
-let stage = 1; const MAX_STAGE = 5; let screenShake = 0; let hitStop = 0; let slashEffects = []; let particles = []; let feedbackText = "적의 칼날을 튕겨내라능!";
-let projectiles = []; let gameState = 'PLAY';
-let player = { x: 120, y: 200, vx: 0, speed: 4.8, hp: 3, state: 'IDLE', timer: 0, facing: 1, dodgeCooldown: 0, drawW: 80, drawH: 96 };
+window.addEventListener('keydown', e => { 
+  keys[e.code] = true; 
+  if (e.code === 'Space') triggerParry();
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyK') triggerDodge();
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+function bindTouch(id, downFn, upFn) {
+  const el = document.getElementById(id);
+  el.addEventListener('touchstart', e => { e.preventDefault(); downFn(); }, {passive: false});
+  el.addEventListener('touchend', e => { e.preventDefault(); upFn(); }, {passive: false});
+  el.addEventListener('mousedown', e => { e.preventDefault(); downFn(); });
+  el.addEventListener('mouseup', e => { e.preventDefault(); upFn(); });
+}
+bindTouch('btn-left', () => touchLeft = true, () => touchLeft = false);
+bindTouch('btn-right', () => touchRight = true, () => touchRight = false);
+bindTouch('btn-parry', triggerParry, () => {});
+bindTouch('btn-dodge', triggerDodge, () => {});
+
+function triggerParry() { 
+  if (player.state === 'IDLE' || player.state === 'RUN') { 
+    player.state = 'PARRY'; 
+    player.timer = 15; 
+  } 
+}
+
+function triggerDodge() { 
+  if ((player.state === 'IDLE' || player.state === 'RUN' || player.state === 'COOLDOWN') && player.dodgeCooldown <= 0) {
+    player.state = 'DODGE'; 
+    player.timer = 14; 
+    player.dodgeCooldown = 35;
+    let moveDir = 0;
+    if (keys['KeyA'] || keys['ArrowLeft'] || touchLeft) moveDir = -1;
+    if (keys['KeyD'] || keys['ArrowRight'] || touchRight) moveDir = 1;
+    player.vx = (moveDir !== 0 ? moveDir : player.facing) * 10;
+    spawnParticles(player.x, player.y, '#80d8ff');
+  }
+}
+
+let stage = 1; 
+const MAX_STAGE = 5; 
+let screenShake = 0; 
+let hitStop = 0; 
+let slashEffects = []; 
+let particles = []; 
+let feedbackText = "적의 칼날을 튕겨내라능!";
+let projectiles = []; 
+let gameState = 'PLAY';
+
+let player = { 
+  x: 120, y: 200, vx: 0, speed: 4.8, hp: 3, 
+  state: 'IDLE', timer: 0, facing: 1, dodgeCooldown: 0, 
+  drawW: 80, drawH: 96 
+};
 let enemy = null;
 
-function spawnParticles(x, y, color) { for (let i = 0; i < 16; i++) { particles.push({ x, y, vx: (Math.random() - 0.5) * 10, vy: (Math.random() - 0.5) * 10, life: 20, color: color || '#ffeb3b' }); } }
-function spawnEnemy(s) { if (s === 5) return { isBoss: true, name: "심연의 검귀", hp: 5, maxHp: 5, x: 700, y: 195, vx: 0, drawW: 100, drawH: 116, state: 'DECIDE', timer: 40, dir: -1, facing: -1, flashTimer: 0, active: true }; const isR = (s === 2 || s === 4); return { isBoss: false, type: isR ? 'R' : 'M', x: 680, y: 200, drawW: 80, drawH: 96, speed: 2.2 + s * 0.4, rushSpeed: 10 + s * 1.2, state: isR ? 'AIM' : 'APPROACH', timer: isR ? 45 : 35, facing: -1, active: true }; }
-enemy = spawnEnemy(stage);
-function triggerParry() { if (player.state === 'IDLE' || player.state === 'RUN') { player.state = 'PARRY'; player.timer = 15; } }
-function triggerDodge() { if ((player.state === 'IDLE' || player.state === 'RUN' || player.state === 'COOLDOWN') && player.dodgeCooldown <= 0) { player.state = 'DODGE'; player.timer = 14; player.dodgeCooldown = 35; let moveDir = 0; if (keys['KeyA'] || touchLeft) moveDir = -1; if (keys['KeyD'] || touchRight) moveDir = 1; player.vx = (moveDir !== 0 ? moveDir : player.facing) * 10; spawnParticles(player.x, player.y, '#80d8ff'); } }
+function spawnParticles(x, y, color) { 
+  for (let i = 0; i < 16; i++) { 
+    particles.push({ 
+      x, y, 
+      vx: (Math.random() - 0.5) * 10, 
+      vy: (Math.random() - 0.5) * 10, 
+      life: 20, 
+      color: color || '#ffeb3b' 
+    }); 
+  } 
+}
 
-// [3] 핵심 게임 루직 (생략되었던 부분 채우기!)
+function spawnEnemy(s) { 
+  if (s === 5) {
+    return { 
+      isBoss: true, name: "심연의 검귀", hp: 5, maxHp: 5, 
+      x: 700, y: 195, vx: 0, drawW: 100, drawH: 116, 
+      state: 'DECIDE', timer: 30, dir: -1, facing: -1, 
+      flashTimer: 0, active: true 
+    };
+  }
+  const isR = (s === 2 || s === 4); 
+  return { 
+    isBoss: false, 
+    type: isR ? 'R' : 'M', 
+    x: 680, y: 200, 
+    drawW: 80, drawH: 96, 
+    speed: 3.0 + s * 0.4, 
+    rushSpeed: 11 + s * 1.0, 
+    state: isR ? 'AIM' : 'APPROACH', 
+    timer: isR ? 45 : 30, 
+    facing: -1, 
+    active: true 
+  }; 
+}
+
+enemy = spawnEnemy(stage);
 
 function handleClash(target, attackDir) {
-  if (player.state === 'DODGE') { feedbackText = "💨 휙-! 참격을 회피했다능!"; return; }
+  if (player.state === 'DODGE') { 
+    feedbackText = "💨 휙-! 참격을 굴러서 회피했다능!"; 
+    return; 
+  }
+
   if (player.state === 'PARRY') {
-    hitStop = 10; screenShake = 25;
+    hitStop = 10; 
+    screenShake = 22;
     if (target.isBoss) {
-      target.hp--; target.flashTimer = 25; feedbackText = `💥 챙-!! 보스의 몸을 베었다능! (HP: ${target.hp})`;
-      target.state = 'SLASHED_PASS'; target.vx = attackDir * 11; target.timer = 14;
-      player.state = 'SLIDE_PASS'; player.vx = -attackDir * 9; player.timer = 12;
-      slashEffects.push({ target, life: 20 }); spawnParticles(target.x, target.y, '#ffffff');
-      if (target.hp <= 0) { target.active = false; advanceStage(); }
+      target.hp--; 
+      target.flashTimer = 22; 
+      feedbackText = `💥 챙-!! 보스의 몸을 베어 넘겼다능! (남은 HP: ${target.hp})`;
+      target.state = 'SLASHED_PASS'; 
+      target.vx = attackDir * 11; 
+      target.timer = 14;
+      player.state = 'SLIDE_PASS'; 
+      player.vx = -attackDir * 9; 
+      player.timer = 12;
+      slashEffects.push({ x: target.x, y: target.y, life: 18 }); 
+      spawnParticles(target.x, target.y, '#ffffff');
+      if (target.hp <= 0) { 
+        target.active = false; 
+        advanceStage(); 
+      }
     } else {
-      slashEffects.push({ target, life: 18 }); spawnParticles(target.x, target.y, '#ffffff');
-      target.active = false; feedbackText = `💥 챙-!! 일도양단으로 베어 넘겼다능!`; advanceStage();
+      slashEffects.push({ x: target.x, y: target.y, life: 16 }); 
+      spawnParticles(target.x, target.y, '#ffffff');
+      target.active = false; 
+      feedbackText = `💥 챙-!! 일도양단으로 베어 넘겼다능!`; 
+      advanceStage();
     }
   } else {
-    player.hp--; spawnParticles(player.x, player.y, '#f44336'); feedbackText = "💀 큭! 참격을 쳐내지 못했다능!";
-    target.state = target.isBoss ? 'DECIDE' : 'APPROACH'; target.timer = 35; target.x += attackDir * -80;
+    player.hp--; 
+    spawnParticles(player.x, player.y, '#f44336'); 
+    feedbackText = "💀 큭! 참격을 쳐내지 못했다능!";
+    target.state = target.isBoss ? 'DECIDE' : 'APPROACH'; 
+    target.timer = 30; 
+    target.x += (attackDir * -90);
     if (player.hp <= 0) gameState = 'GAMEOVER';
   }
 }
@@ -116,85 +216,372 @@ function advanceStage() {
   if (stage >= MAX_STAGE) gameState = 'VICTORY';
   else {
     gameState = 'ADVANCING';
-    feedbackText = `🔥 STAGE ${stage+1} 돌입! 전진하라능!`;
+    feedbackText = `🔥 STAGE ${stage + 1} 돌입! 전진하라능!`;
   }
 }
 
 function update() {
   if (hitStop > 0) { hitStop--; return; }
   if (screenShake > 0) screenShake--;
-  particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life--; }); particles = particles.filter(p => p.life > 0);
-  slashEffects.forEach(s => { if (s) s.life--; }); slashEffects = slashEffects.filter(s => s && s.life > 0);
+  particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life--; }); 
+  particles = particles.filter(p => p.life > 0);
+  slashEffects.forEach(s => s.life--); 
+  slashEffects = slashEffects.filter(s => s.life > 0);
   if (player.dodgeCooldown > 0) player.dodgeCooldown--;
 
   if (gameState === 'PLAY') {
-    // 플레이어 제어 및 상태
+    // 1. 플레이어 이동 및 모션 상태
     if (player.state === 'IDLE' || player.state === 'RUN') {
-      let move = 0; if (keys['KeyA'] || touchLeft) move = -1; if (keys['KeyD'] || touchRight) move = 1;
-      if (move !== 0) { player.x += move * player.speed; player.facing = move; player.state = 'RUN'; } else player.state = 'IDLE';
+      let move = 0; 
+      if (keys['KeyA'] || keys['ArrowLeft'] || touchLeft) move = -1; 
+      if (keys['KeyD'] || keys['ArrowRight'] || touchRight) move = 1;
+
+      if (move !== 0) { 
+        player.x += move * player.speed; 
+        player.facing = move; 
+        player.state = 'RUN'; 
+      } else {
+        player.state = 'IDLE'; 
+      }
       player.x = Math.max(40, Math.min(canvas.width - 40, player.x));
-    } else if (player.state === 'PARRY') { if (--player.timer <= 0) player.state = 'IDLE'; } 
-    else if (player.state === 'DODGE' || player.state === 'SLIDE_PASS') { player.x += player.vx; player.x = Math.max(40, Math.min(canvas.width - 40, player.x)); if (player.state === 'DODGE' && player.timer % 3 === 0) spawnParticles(player.x, player.y, 'rgba(0, 229, 255, 0.4)'); if (--player.timer <= 0) player.state = 'IDLE'; }
+    } else if (player.state === 'PARRY') { 
+      if (--player.timer <= 0) player.state = 'IDLE'; 
+    } else if (player.state === 'DODGE' || player.state === 'SLIDE_PASS') { 
+      player.x += player.vx; 
+      player.x = Math.max(40, Math.min(canvas.width - 40, player.x)); 
+      if (player.state === 'DODGE' && player.timer % 3 === 0) spawnParticles(player.x, player.y, 'rgba(0, 229, 255, 0.4)'); 
+      if (--player.timer <= 0) player.state = 'IDLE'; 
+    }
 
-    // 투사체 처리
-    for (let i = projectiles.length - 1; i >= 0; i--) { let p = projectiles[i]; p.x += p.vx; if (!p.reflected && Math.abs(p.x - player.x) < 30) { if (player.state === 'DODGE') feedbackText = "💨 휙-! 탄환을 회피했다능!"; else if (player.state === 'PARRY') { p.reflected = true; p.vx = -p.vx * 1.5; hitStop = 6; screenShake = 14; spawnParticles(p.x, p.y, '#00e5ff'); feedbackText = "⚡ 챙-!! 탄환을 반사했다능!"; } else { player.hp--; spawnParticles(player.x, player.y, '#f44336'); projectiles.splice(i, 1); feedbackText = "💀 탄환에 피격당했다능!"; if (player.hp <= 0) gameState = 'GAMEOVER'; continue; } } if (p.reflected && enemy && enemy.active && Math.abs(p.x - enemy.x) < 40) { hitStop = 8; screenShake = 18; spawnParticles(enemy.x, enemy.y, '#ff1744'); projectiles.splice(i, 1); if (enemy.isBoss) { enemy.hp--; enemy.flashTimer = 18; feedbackText = `💥 반사탄 명중! (HP: ${enemy.hp})`; if (enemy.hp <= 0) { enemy.active = false; advanceStage(); } else { enemy.state = 'DECIDE'; enemy.timer = 35; } } else { enemy.active = false; advanceStage(); } continue; } if (p.x < -60 || p.x > canvas.width + 60) projectiles.splice(i, 1); }
+    // 2. 투사체 처리
+    for (let i = projectiles.length - 1; i >= 0; i--) { 
+      let p = projectiles[i]; 
+      p.x += p.vx; 
 
-    // 적 및 보스 AI
+      if (!p.reflected && Math.abs(p.x - player.x) < 32) { 
+        if (player.state === 'DODGE') {
+          feedbackText = "💨 휙-! 탄환을 회피했다능!"; 
+        } else if (player.state === 'PARRY') { 
+          p.reflected = true; 
+          p.vx = -p.vx * 1.5; 
+          hitStop = 6; 
+          screenShake = 14; 
+          spawnParticles(p.x, p.y, '#00e5ff'); 
+          feedbackText = "⚡ 챙-!! 탄환을 반사했다능!"; 
+        } else { 
+          player.hp--; 
+          spawnParticles(player.x, player.y, '#f44336'); 
+          projectiles.splice(i, 1); 
+          feedbackText = "💀 탄환에 피격당했다능!"; 
+          if (player.hp <= 0) gameState = 'GAMEOVER'; 
+          continue; 
+        } 
+      } 
+
+      if (p.reflected && enemy && enemy.active && Math.abs(p.x - enemy.x) < 42) { 
+        hitStop = 8; 
+        screenShake = 18; 
+        spawnParticles(enemy.x, enemy.y, '#ff1744'); 
+        projectiles.splice(i, 1); 
+
+        if (enemy.isBoss) { 
+          enemy.hp--; 
+          enemy.flashTimer = 18; 
+          feedbackText = `💥 반사탄 명중! (남은 HP: ${enemy.hp})`; 
+          if (enemy.hp <= 0) { 
+            enemy.active = false; 
+            advanceStage(); 
+          } else { 
+            enemy.state = 'DECIDE'; 
+            enemy.timer = 30; 
+          } 
+        } else { 
+          enemy.active = false; 
+          advanceStage(); 
+        } 
+        continue; 
+      } 
+      if (p.x < -60 || p.x > canvas.width + 60) projectiles.splice(i, 1); 
+    }
+
+    // 3. 적 및 보스 확실한 공격 AI (수정된 핵심!)
     if (enemy && enemy.active) {
       if (enemy.flashTimer > 0) enemy.flashTimer--;
+
       if (!enemy.isBoss) {
-        const dist = enemy.x - player.x; enemy.facing = dist > 0 ? -1 : 1;
-        if (enemy.type === 'MELEE') { if (enemy.state === 'APPROACH') { if (Math.abs(dist) > 150) enemy.x += (dist > 0 ? -enemy.speed : enemy.speed); else { enemy.state = 'WINDUP'; enemy.timer = Math.max(16, 36 - stage * 4); } } else if (enemy.state === 'WINDUP') { if (--enemy.timer <= 0) enemy.state = 'RUSH'; } else if (enemy.state === 'RUSH') { enemy.x += enemy.facing * enemy.rushSpeed; if (Math.abs(enemy.x - player.x) < 42) handleClash(enemy, enemy.facing); } } 
-        else if (enemy.type === 'RANGED') { if (--enemy.timer <= 0) { projectiles.push({ x: enemy.x - 25, y: enemy.y - 12, vx: -(6 + stage * 0.8), reflected: false }); enemy.timer = 65 - stage * 5; } }
+        const dist = enemy.x - player.x;
+        enemy.facing = dist > 0 ? -1 : 1;
+
+        if (enemy.type === 'MELEE') { 
+          // 근접 적: 망설임 없이 전진!
+          if (enemy.state === 'APPROACH') { 
+            enemy.x += (dist > 0 ? -enemy.speed : enemy.speed);
+            // 180px 안으로 들어오면 공격 태세 돌입!
+            if (Math.abs(dist) <= 180) { 
+              enemy.state = 'WINDUP'; 
+              enemy.timer = Math.max(14, 32 - stage * 3); 
+            } 
+          } else if (enemy.state === 'WINDUP') { 
+            // 번쩍이며 돌진 준비
+            if (--enemy.timer <= 0) {
+              enemy.state = 'RUSH'; 
+            }
+          } else if (enemy.state === 'RUSH') { 
+            // 맹렬한 참격 돌진!
+            enemy.x += enemy.facing * enemy.rushSpeed; 
+            if (Math.abs(enemy.x - player.x) < 45) {
+              handleClash(enemy, enemy.facing); 
+            }
+            // 빗나가서 화면 끝으로 가면 다시 추격
+            if (enemy.x < 30 || enemy.x > canvas.width - 30) {
+              enemy.state = 'APPROACH';
+            }
+          } 
+        } else if (enemy.type === 'RANGED') { 
+          // 원거리 적: 거리 유지하며 탄환 발사!
+          if (Math.abs(dist) < 220) enemy.x += (dist > 0 ? enemy.speed : -enemy.speed);
+          if (--enemy.timer <= 0) { 
+            projectiles.push({ 
+              x: enemy.x + (enemy.facing * 25), 
+              y: enemy.y - 12, 
+              vx: enemy.facing * (6.5 + stage * 0.7), 
+              reflected: false 
+            }); 
+            enemy.timer = 55 - stage * 5; 
+          } 
+        }
       } else {
-        if (enemy.state === 'DECIDE') { if (--enemy.timer <= 0) { const roll = Math.random(); if (enemy.hp <= 4 && roll < 0.45) { enemy.state = 'CHARGE_SNIPE'; enemy.timer = 30; enemy.facing = enemy.x > player.x ? -1 : 1; } else { enemy.state = 'READY_RUSH'; enemy.timer = 25; } } } 
-        else if (enemy.state === 'CHARGE_SNIPE') { if (--enemy.timer % 6 === 0) spawnParticles(enemy.x, enemy.y, '#ff4081'); if (enemy.timer <= 0) { const dir = enemy.x > player.x ? -1 : 1; projectiles.push({ x: enemy.x + dir * 30, y: enemy.y - 14, vx: dir * 13, reflected: false }); spawnParticles(enemy.x, enemy.y, '#ff1744'); enemy.state = 'DECIDE'; enemy.timer = 45; } } 
-        else if (enemy.state === 'READY_RUSH') { enemy.dir = enemy.x > player.x ? -1 : 1; enemy.facing = enemy.dir; enemy.state = 'WINDUP'; enemy.timer = 28; } else if (enemy.state === 'WINDUP') { if (--enemy.timer <= 0) enemy.state = 'RUSH'; } else if (enemy.state === 'RUSH') { enemy.x += enemy.dir * 15; if (Math.abs(enemy.x - player.x) < 45) handleClash(enemy, enemy.dir); if ((enemy.dir === -1 && enemy.x < 50) || (enemy.dir === 1 && enemy.x > canvas.width - 50)) { enemy.state = 'DECIDE'; enemy.timer = 35; } } 
-        else if (enemy.state === 'SLASHED_PASS') { enemy.x += enemy.vx; spawnParticles(enemy.x, enemy.y, '#ff1744'); if (--enemy.timer <= 0) { enemy.state = 'DECIDE'; enemy.timer = 40; } }
+        // [👑 최종 보스 패턴 AI]
+        const bDist = enemy.x - player.x;
+        if (enemy.state === 'DECIDE') { 
+          enemy.facing = bDist > 0 ? -1 : 1;
+          if (--enemy.timer <= 0) { 
+            const roll = Math.random(); 
+            if (enemy.hp <= 4 && roll < 0.45) { 
+              enemy.state = 'CHARGE_SNIPE'; 
+              enemy.timer = 28; 
+            } else { 
+              enemy.dir = enemy.facing;
+              enemy.state = 'WINDUP'; 
+              enemy.timer = 25; 
+            } 
+          } 
+        } else if (enemy.state === 'CHARGE_SNIPE') { 
+          if (enemy.timer % 5 === 0) spawnParticles(enemy.x, enemy.y, '#ff4081'); 
+          if (--enemy.timer <= 0) { 
+            const shootDir = enemy.x > player.x ? -1 : 1; 
+            projectiles.push({ 
+              x: enemy.x + shootDir * 30, 
+              y: enemy.y - 14, 
+              vx: shootDir * 13, 
+              reflected: false 
+            }); 
+            spawnParticles(enemy.x, enemy.y, '#ff1744'); 
+            enemy.state = 'DECIDE'; 
+            enemy.timer = 40; 
+          } 
+        } else if (enemy.state === 'WINDUP') { 
+          if (--enemy.timer <= 0) {
+            enemy.state = 'RUSH'; 
+          }
+        } else if (enemy.state === 'RUSH') { 
+          enemy.x += enemy.dir * 15; 
+          if (Math.abs(enemy.x - player.x) < 45) handleClash(enemy, enemy.dir); 
+          if ((enemy.dir === -1 && enemy.x < 50) || (enemy.dir === 1 && enemy.x > canvas.width - 50)) { 
+            enemy.state = 'DECIDE'; 
+            enemy.timer = 30; 
+          } 
+        } else if (enemy.state === 'SLASHED_PASS') { 
+          enemy.x += enemy.vx; 
+          spawnParticles(enemy.x, enemy.y, '#ff1744'); 
+          if (--enemy.timer <= 0) { 
+            enemy.state = 'DECIDE'; 
+            enemy.timer = 35; 
+          } 
+        }
       }
     }
   } else if (gameState === 'ADVANCING') { 
-    player.x += 8; player.facing = 1; player.state = 'RUN';
-    if (player.x > canvas.width + 40) {
-      stage++; player.x = -30; projectiles = []; enemy = spawnEnemy(stage);
-      feedbackText = stage === 5 ? "⚠️ BOSS WARNING: 심연의 검귀 등장!" : `🔥 STAGE ${stage} 돌입!`;
-      gameState = 'PLAY'; // 다음 스테이지 시작
-    }
+    player.x += 8; 
+    player.facing = 1; 
+    player.state = 'RUN'; 
+    if (player.x > canvas.width + 40) { 
+      stage++; 
+      player.x = -30; 
+      projectiles = []; 
+      enemy = spawnEnemy(stage); 
+      feedbackText = stage === 5 ? "⚠️ BOSS WARNING: 심연의 검귀 등장!" : `🔥 STAGE ${stage} 돌입!`; 
+    } 
+    if (player.x >= 120 && player.x < 130) { 
+      player.x = 120; 
+      gameState = 'PLAY'; 
+    } 
   }
 }
 
-// [4] 렌더링 함수 (이전과 동일)
-function drawCharacter(imgIdle, imgRun, imgAttack, x, y, width, height, facingRight, state, alpha = 1.0, isFlashing = false) { ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); if (!facingRight) ctx.scale(-1, 1); if (isFlashing) ctx.filter = 'brightness(2.5) contrast(1.5)'; let targetImg = imgIdle; if (state === 'RUN') targetImg = imgRun; else if (state === 'PARRY') targetImg = imgAttack; if (targetImg.complete && targetImg.naturalWidth !== 0) { ctx.drawImage(targetImg, -width / 2, -height / 2, width, height); } else { ctx.fillStyle = '#4caf50'; ctx.fillRect(-width / 4, -height / 2, width / 2, height); } ctx.restore(); }
-function drawEnemy(img, x, y, width, height, facingRight, alpha = 1.0, isFlashing = false) { ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); if (!facingRight) ctx.scale(-1, 1); if (isFlashing) ctx.filter = 'brightness(2.5) contrast(1.5)'; if (img.complete && img.naturalWidth !== 0) { ctx.drawImage(img, -width / 2, -height / 2, width, height); } else { ctx.fillStyle = '#f44336'; ctx.fillRect(-width / 4, -height / 2, width / 2, height); } ctx.restore(); }
+function drawCharacter(imgIdle, imgRun, imgAttack, x, y, width, height, facingRight, state, alpha = 1.0, isFlashing = false) { 
+  ctx.save(); 
+  ctx.globalAlpha = alpha; 
+  ctx.translate(x, y); 
+  if (!facingRight) ctx.scale(-1, 1); 
+  if (isFlashing) ctx.filter = 'brightness(2.5) contrast(1.5)'; 
+
+  let targetImg = imgIdle; 
+  if (state === 'RUN') targetImg = imgRun; 
+  else if (state === 'PARRY') targetImg = imgAttack; 
+
+  if (targetImg.complete && targetImg.naturalWidth !== 0) { 
+    ctx.drawImage(targetImg, -width / 2, -height / 2, width, height); 
+  } else { 
+    ctx.fillStyle = '#4caf50'; 
+    ctx.fillRect(-width / 4, -height / 2, width / 2, height); 
+  } 
+  ctx.restore(); 
+}
+
+function drawEnemy(img, x, y, width, height, facingRight, alpha = 1.0, isFlashing = false) { 
+  ctx.save(); 
+  ctx.globalAlpha = alpha; 
+  ctx.translate(x, y); 
+  if (!facingRight) ctx.scale(-1, 1); 
+  if (isFlashing) ctx.filter = 'brightness(2.5) contrast(1.5)'; 
+  if (img.complete && img.naturalWidth !== 0) { 
+    ctx.drawImage(img, -width / 2, -height / 2, width, height); 
+  } else { 
+    ctx.fillStyle = '#f44336'; 
+    ctx.fillRect(-width / 4, -height / 2, width / 2, height); 
+  } 
+  ctx.restore(); 
+}
 
 function draw() {
-  ctx.save(); if (screenShake > 0) ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = '#444'; ctx.lineWidth = 2; ctx.strokeRect(0, 248, canvas.width, 1);
+  ctx.save(); 
+  if (screenShake > 0) ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake); 
+  ctx.clearRect(0, 0, canvas.width, canvas.height); 
 
-  // 플레이어 및 UI
-  drawCharacter(imgPlayerIdle, imgPlayerRun, imgPlayerAttack, player.x, player.y, player.drawW, player.drawH, (player.facing === 1), player.state, (player.state === 'DODGE' ? 0.45 : 1.0));
-  if (player.state === 'PARRY') { ctx.strokeStyle = '#00e5ff'; ctx.lineWidth = 5; ctx.strokeRect(player.x - 24, player.y - 48, 48, 96); }
-  projectiles.forEach(p => { ctx.fillStyle = p.reflected ? '#00e5ff' : '#ff1744'; ctx.beginPath(); ctx.arc(p.x, p.y, p.reflected ? 9 : 8, 0, Math.PI * 2); ctx.fill(); });
+  // 전장 바닥
+  ctx.strokeStyle = '#444'; 
+  ctx.lineWidth = 2; 
+  ctx.strokeRect(0, 248, canvas.width, 1); 
 
-  // 적 & 보스
-  if (enemy && enemy.active) {
-    if (enemy.isBoss) drawEnemy(imgBoss, enemy.x, enemy.y, enemy.drawW, enemy.drawH, (enemy.facing === 1), 1.0, (enemy.flashTimer > 0 || enemy.state === 'SLASHED_PASS'));
-    else drawEnemy((enemy.type === 'R' ? imgEnemyRanged : imgEnemyMelee), enemy.x, enemy.y, enemy.drawW, enemy.drawH, (enemy.facing === 1));
-    if (enemy.state === 'WINDUP' || enemy.state === 'CHARGE_SNIPE') { ctx.fillStyle = '#ff1744'; ctx.font = 'bold 28px sans-serif'; ctx.fillText('!', enemy.x - 5, enemy.y - 65); }
-  }
+  // 1. 플레이어
+  const isPlayerFacingRight = (player.facing === 1); 
+  const playerAlpha = (player.state === 'DODGE' || player.state === 'SLIDE_PASS') ? 0.45 : 1.0; 
+  drawCharacter(imgPlayerIdle, imgPlayerRun, imgPlayerAttack, player.x, player.y, player.drawW, player.drawH, isPlayerFacingRight, player.state, playerAlpha); 
 
-  // 이펙트 및 UI
-  slashEffects.forEach(s => { if (s && s.target) { const t = s.target; ctx.strokeStyle = '#ff1744'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(t.x - 65, t.y - 70); ctx.lineTo(t.x + 65, t.y + 70); ctx.stroke(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(t.x - 70, t.y - 60); ctx.lineTo(t.x + 70, t.y + 60); ctx.stroke(); } });
-  particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 3.5, 3.5); });
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left'; ctx.fillText(`STAGE: ${stage} / ${MAX_STAGE}`, 25, 30); ctx.fillText(`체력: ${'❤️'.repeat(Math.max(0, player.hp))}`, 25, 52); ctx.fillStyle = (player.dodgeCooldown <= 0 ? '#00e5ff' : '#777'); ctx.fillText(`회피: ${player.dodgeCooldown <= 0 ? 'READY' : 'COOL'}`, 25, 74);
-  if (enemy && enemy.isBoss && enemy.active) { ctx.textAlign = 'center'; ctx.fillStyle = '#ff5252'; ctx.font = 'bold 15px sans-serif'; ctx.fillText(`${enemy.name} [HP: ${enemy.hp} / 5]`, canvas.width / 2, 28); const bW = 260; const startX = canvas.width / 2 - bW / 2; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(startX, 36, bW, 12); ctx.fillStyle = '#ff1744'; ctx.fillRect(startX + 2, 38, (bW - 4) * (enemy.hp / enemy.maxHp), 8); }
-  ctx.textAlign = 'center'; ctx.font = '15px sans-serif'; ctx.fillStyle = '#eee'; ctx.fillText(feedbackText, canvas.width / 2, 305);
-  if (gameState === 'VICTORY') { ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.fillStyle = '#ffd700'; ctx.font = 'bold 36px sans-serif'; ctx.fillText('🏆 심연의 검귀 토벌 완료! 🏆', canvas.width / 2, 145); ctx.font = '17px sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText('새로고침하여 다시 도전하라능!', canvas.width / 2, 190); } else if (gameState === 'GAMEOVER') { ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.fillStyle = '#f44336'; ctx.font = 'bold 36px sans-serif'; ctx.fillText('💀 DEFEAT...', canvas.width / 2, 145); ctx.font = '17px sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText('새로고침하여 다시 도전하라능!', canvas.width / 2, 190); }
-  ctx.restore();
+  // 패링 가드 실드
+  if (player.state === 'PARRY') { 
+    ctx.strokeStyle = '#00e5ff'; 
+    ctx.lineWidth = 5; 
+    ctx.strokeRect(player.x - 24, player.y - 48, 48, 96); 
+  } 
+
+  // 2. 투사체
+  projectiles.forEach(p => { 
+    ctx.fillStyle = p.reflected ? '#00e5ff' : '#ff1744'; 
+    ctx.beginPath(); 
+    ctx.arc(p.x, p.y, p.reflected ? 9 : 8, 0, Math.PI * 2); 
+    ctx.fill(); 
+  }); 
+
+  // 3. 적 & 보스
+  if (enemy && enemy.active) { 
+    const isEnemyFacingRight = (enemy.facing === 1); 
+    if (enemy.isBoss) {
+      drawEnemy(imgBoss, enemy.x, enemy.y, enemy.drawW, enemy.drawH, isEnemyFacingRight, 1.0, (enemy.flashTimer > 0 || enemy.state === 'SLASHED_PASS')); 
+      if (enemy.state === 'WINDUP' || enemy.state === 'CHARGE_SNIPE') { 
+        ctx.fillStyle = '#ff1744'; 
+        ctx.font = 'bold 28px sans-serif'; 
+        ctx.fillText('!', enemy.x - 5, enemy.y - 65); 
+      } 
+    } else {
+      drawEnemy((enemy.type === 'R' ? imgEnemyRanged : imgEnemyMelee), enemy.x, enemy.y, enemy.drawW, enemy.drawH, isEnemyFacingRight); 
+      if (enemy.state === 'WINDUP') { 
+        ctx.fillStyle = '#ff1744'; 
+        ctx.font = 'bold 26px sans-serif'; 
+        ctx.fillText('!', enemy.x - 4, enemy.y - 55); 
+      } 
+    }
+  } 
+
+  // 4. 참격선
+  slashEffects.forEach(s => { 
+    ctx.strokeStyle = '#ff1744'; 
+    ctx.lineWidth = 7; 
+    ctx.beginPath(); 
+    ctx.moveTo(s.x - 65, s.y - 70); 
+    ctx.lineTo(s.x + 65, s.y + 70); 
+    ctx.stroke(); 
+    ctx.strokeStyle = '#ffffff'; 
+    ctx.lineWidth = 3.5; 
+    ctx.beginPath(); 
+    ctx.moveTo(s.x - 70, s.y - 60); 
+    ctx.lineTo(s.x + 70, s.y + 60); 
+    ctx.stroke(); 
+  }); 
+
+  // 파티클
+  particles.forEach(p => { 
+    ctx.fillStyle = p.color; 
+    ctx.fillRect(p.x, p.y, 3.5, 3.5); 
+  }); 
+
+  // UI
+  ctx.fillStyle = '#fff'; 
+  ctx.font = 'bold 16px sans-serif'; 
+  ctx.textAlign = 'left'; 
+  ctx.fillText(`STAGE: ${stage} / ${MAX_STAGE}`, 25, 30); 
+  ctx.fillText(`체력: ${'❤️'.repeat(Math.max(0, player.hp))}`, 25, 52); 
+  ctx.fillStyle = (player.dodgeCooldown <= 0 ? '#00e5ff' : '#777'); 
+  ctx.fillText(`회피: ${player.dodgeCooldown <= 0 ? 'READY' : 'COOL'}`, 25, 74); 
+
+  if (enemy && enemy.isBoss && enemy.active) { 
+    ctx.textAlign = 'center'; 
+    ctx.fillStyle = '#ff5252'; 
+    ctx.font = 'bold 15px sans-serif'; 
+    ctx.fillText(`${enemy.name} [HP: ${enemy.hp} / 5]`, canvas.width / 2, 28); 
+    const bW = 260; 
+    const startX = canvas.width / 2 - bW / 2; 
+    ctx.strokeStyle = '#fff'; 
+    ctx.lineWidth = 2; 
+    ctx.strokeRect(startX, 36, bW, 12); 
+    ctx.fillStyle = '#ff1744'; 
+    ctx.fillRect(startX + 2, 38, (bW - 4) * (enemy.hp / enemy.maxHp), 8); 
+  } 
+
+  ctx.textAlign = 'center'; 
+  ctx.font = '15px sans-serif'; 
+  ctx.fillStyle = '#eee'; 
+  ctx.fillText(feedbackText, canvas.width / 2, 305); 
+
+  if (gameState === 'VICTORY') { 
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; 
+    ctx.fillRect(0, 0, canvas.width, canvas.height); 
+    ctx.fillStyle = '#ffd700'; 
+    ctx.font = 'bold 36px sans-serif'; 
+    ctx.fillText('🏆 심연의 검귀 토벌 완료! 🏆', canvas.width / 2, 145); 
+    ctx.font = '17px sans-serif'; 
+    ctx.fillStyle = '#fff'; 
+    ctx.fillText('새로고침하여 다시 도전하라능!', canvas.width / 2, 190); 
+  } else if (gameState === 'GAMEOVER') { 
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; 
+    ctx.fillRect(0, 0, canvas.width, canvas.height); 
+    ctx.fillStyle = '#f44336'; 
+    ctx.font = 'bold 36px sans-serif'; 
+    ctx.fillText('💀 DEFEAT...', canvas.width / 2, 145); 
+    ctx.font = '17px sans-serif'; 
+    ctx.fillStyle = '#fff'; 
+    ctx.fillText('새로고침하여 다시 도전하라능!', canvas.width / 2, 190); 
+  } 
+
+  ctx.restore(); 
 }
 
-function loop() { update(); draw(); requestAnimationFrame(loop); }
+function loop() { 
+  update(); 
+  draw(); 
+  requestAnimationFrame(loop); 
+}
 loop();
 </script>
 </body>
