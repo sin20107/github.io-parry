@@ -124,7 +124,7 @@ function update() {
   if (hitStop > 0) { hitStop--; return; }
   if (screenShake > 0) screenShake--;
   particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life--; }); particles = particles.filter(p => p.life > 0);
-  slashEffects.forEach(s => s.life--); slashEffects = slashEffects.filter(s => s.life > 0);
+  slashEffects.forEach(s => { if (s) s.life--; }); slashEffects = slashEffects.filter(s => s && s.life > 0);
   if (player.dodgeCooldown > 0) player.dodgeCooldown--;
 
   if (gameState === 'PLAY') {
@@ -185,7 +185,7 @@ function draw() {
   }
 
   // 이펙트 및 UI
-  slashEffects.forEach(s => { const t = s.target; ctx.strokeStyle = '#ff1744'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(t.x - 65, t.y - 70); ctx.lineTo(t.x + 65, t.y + 70); ctx.stroke(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(t.x - 70, t.y - 60); ctx.lineTo(t.x + 70, t.y + 60); ctx.stroke(); });
+  slashEffects.forEach(s => { if (s && s.target) { const t = s.target; ctx.strokeStyle = '#ff1744'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(t.x - 65, t.y - 70); ctx.lineTo(t.x + 65, t.y + 70); ctx.stroke(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(t.x - 70, t.y - 60); ctx.lineTo(t.x + 70, t.y + 60); ctx.stroke(); } });
   particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 3.5, 3.5); });
   ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left'; ctx.fillText(`STAGE: ${stage} / ${MAX_STAGE}`, 25, 30); ctx.fillText(`체력: ${'❤️'.repeat(Math.max(0, player.hp))}`, 25, 52); ctx.fillStyle = (player.dodgeCooldown <= 0 ? '#00e5ff' : '#777'); ctx.fillText(`회피: ${player.dodgeCooldown <= 0 ? 'READY' : 'COOL'}`, 25, 74);
   if (enemy && enemy.isBoss && enemy.active) { ctx.textAlign = 'center'; ctx.fillStyle = '#ff5252'; ctx.font = 'bold 15px sans-serif'; ctx.fillText(`${enemy.name} [HP: ${enemy.hp} / 5]`, canvas.width / 2, 28); const bW = 260; const startX = canvas.width / 2 - bW / 2; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(startX, 36, bW, 12); ctx.fillStyle = '#ff1744'; ctx.fillRect(startX + 2, 38, (bW - 4) * (enemy.hp / enemy.maxHp), 8); }
