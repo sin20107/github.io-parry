@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>바람의 검객: 일섬 패링 액션</title>
+<title>바람의 검객: 일섬 패링 액션 (버그 수정판)</title>
 <style>
   body { background: #111; color: #fff; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
   canvas { background: #181818; border: 2px solid #555; display: block; margin: 0 auto; box-shadow: 0 4px 25px rgba(0,0,0,0.8); }
@@ -11,7 +11,7 @@
 </style>
 </head>
 <body>
-  <h2>⚔️ 바람의 검객: 일섬 패링 & 회피 액션 ⚔️</h2>
+  <h2>⚔️ 바람의 검객: 일섬 패링 & 회피 Action ⚔️</h2>
   <p>이동: <span class="key">A / D</span> | 패링: <span class="key">Space</span> | 회피 대시: <span class="key">Shift</span> 또는 <span class="key">K</span></p>
   <canvas id="game" width="800" height="340"></canvas>
 
@@ -19,7 +19,7 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
-// 🖼️ 이미지 리소스 로드
+// 🖼️ 이미지 리소스 로드 (폴더 밖에 index.html과 같이 있어야 함)
 const imgPlayer = new Image(); imgPlayer.src = 'player.png';
 const imgBoss = new Image(); imgBoss.src = 'boss.png';
 const imgEnemyMelee = new Image(); imgEnemyMelee.src = 'enemy_melee.png';
@@ -343,6 +343,17 @@ function handleClash(target, attackDir) {
       player.vx = -attackDir * 9;
       player.timer = 12;
 
+      // 🌟 [최종 보스전 버그 수정 포인트]
+      // 교차 슬라이딩이 터지는 찰나에, 주인공 좌표를 기준으로 시선을 강제로 보스를 향하게 뒤집는다능!
+      if (attackDir === -1) { // 보스가 우->좌로 돌진했을 때 (주인공은 보스보다 왼쪽에서 마주침)
+        // 주인공은 오른쪽(-attackDir * vx, 결과적으로 +vx)으로 미끄러져 보스의 오른쪽 좌표로 이동.
+        // 그러므로 시선은 '왼쪽'(-1)을 보게 고정!
+        player.facing = -1;
+      } else { // 보스가 좌->우로 돌진했을 때
+        // 주인공은 왼쪽으로 미끄러져 보스의 왼쪽 좌표로 이동. 시선은 '오른쪽'(1) 고정!
+        player.facing = 1;
+      }
+
       slashEffects.push({ target: target, life: 18 });
       spawnParticles(target.x, target.y, '#ffffff');
     } else {
@@ -427,7 +438,6 @@ function draw() {
   // 3. 적 & 보스
   if (enemy && enemy.active) {
     if (enemy.isBoss) {
-      // 🌟 [수정 포인트] 보스의 시선 방향을 기존과 정반대로 반전(!facing) 처리!
       const isBossFacingRight = !(enemy.facing === 1);
       const isBossFlashing = (enemy.flashTimer > 0 || enemy.state === 'SLASHED_PASS');
       drawCharacter(imgBoss, enemy.x, enemy.y, enemy.drawW, enemy.drawH, isBossFacingRight, 1.0, isBossFlashing);
@@ -439,7 +449,7 @@ function draw() {
       }
     } else {
       const isEnemyFacingRight = (enemy.facing === 1);
-      const targetImg = (enemy.type === 'RANGED') ? imgEnemyRanged : imgEnemyMelee;
+      const targetImg = (enemy.type === 'RANGED' ? imgEnemyRanged : imgEnemyMelee);
       drawCharacter(targetImg, enemy.x, enemy.y, enemy.drawW, enemy.drawH, isEnemyFacingRight);
 
       if (enemy.state === 'WINDUP' || (enemy.type === 'RANGED' && enemy.timer < 16)) {
