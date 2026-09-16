@@ -438,6 +438,7 @@ function update() {
   }
 }
 
+// 플레이어는 원본이 '오른쪽'을 보고 있으므로: 왼쪽(-1)을 볼 때 scale(-1, 1)로 반전!
 function drawCharacter(imgIdle, imgRun, imgAttack, x, y, width, height, facingRight, state, alpha = 1.0, isFlashing = false) {
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -458,11 +459,12 @@ function drawCharacter(imgIdle, imgRun, imgAttack, x, y, width, height, facingRi
   ctx.restore();
 }
 
+// 적들은 원본이 '왼쪽'을 보고 있으므로: 오른쪽(+1)을 볼 때 scale(-1, 1)로 반전! (완전 해결!)
 function drawEnemy(img, x, y, width, height, facingRight, alpha = 1.0, isFlashing = false) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(x, y);
-  if (!facingRight) ctx.scale(-1, 1);
+  if (facingRight) ctx.scale(-1, 1); // 오른쪽 볼 때만 뒤집기!
   if (isFlashing) ctx.filter = 'brightness(2.5) contrast(1.5)';
 
   if (img.complete && img.naturalWidth !== 0) {
@@ -506,8 +508,7 @@ function draw() {
   if (enemy && enemy.active) {
     const isEnemyFacingRight = (enemy.facing === 1);
     if (enemy.isBoss) {
-      // 오른쪽을 보고 있는 원본 이미지에 맞춰 시선을 반전(!isEnemyFacingRight)
-      drawEnemy(imgBoss, enemy.x, enemy.y, enemy.w, enemy.h, !isEnemyFacingRight, 1.0, (enemy.flashTimer > 0 || enemy.state === 'SLASHED_PASS'));
+      drawEnemy(imgBoss, enemy.x, enemy.y, enemy.w, enemy.h, isEnemyFacingRight, 1.0, (enemy.flashTimer > 0 || enemy.state === 'SLASHED_PASS'));
       if (enemy.state === 'WINDUP' || enemy.state === 'CHARGE_SNIPE') {
         ctx.fillStyle = '#ff1744';
         ctx.font = 'bold 28px sans-serif';
